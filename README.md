@@ -4,11 +4,14 @@
 Установите Raspberry PI OS Lite. 
 
 Обязательно в Advanced Options (ctrl+shift+x):  
-Пользователь: beren
-Пароль: The2ndlaw
-WIFI SSID: Cleverest Defense Systems
-WIFI PASS: The2ndlaw
-Name: BerenZIK
+Пользователь: beren  
+Пароль: The2ndlaw  
+WIFI SSID: Cleverest Defense Systems  
+WIFI PASS: The2ndlaw  
+Name: BerenZIK  
+
+# Провода
+![screenshot](Схемка.png)
 
 # Обновление системы и базовые пакеты
 ```
