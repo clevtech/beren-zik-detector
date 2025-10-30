@@ -28,16 +28,18 @@ STEP = 10_000_000
 LISTEN_DURATION = 2
 
 FREQUENCY_RANGES = [
+    (2_400_000_000, 2_480_000_000, 3),
     (902_000_000, 921_000_000, 3),
     (923_000_000, 928_000_000, 3),
     (2_400_000_000, 2_480_000_000, 3),
     (1_070_000_000, 1_370_000_000, 3),
+    (2_400_000_000, 2_480_000_000, 3),
     (5_725_000_000, 5_875_000_000, 3),
 ]
 
 ignore_counter = {}
-ignore_limit = 3
-ignore_duration = 180
+ignore_limit = 5
+ignore_duration = 60
 
 os.makedirs("logs", exist_ok=True)
 log_filename = datetime.now().strftime("logs/log_%Y-%m-%d_%H-%M-%S.txt")
@@ -155,6 +157,23 @@ def signal_it(fast=False):
         pwm.stop()
         GPIO.output(pin_led, GPIO.LOW)
 
+def signal_ignore():
+    pwm = GPIO.PWM(pin, 2000)
+    try:
+        print(f"🔔 signal_ignore called, fast={fast}")
+        repeats = 6
+        for i in range(repeats):
+            GPIO.output(pin_led, GPIO.HIGH)
+            pwm.start(50)
+            time.sleep(0.1)
+            pwm.ChangeDutyCycle(0)
+            GPIO.output(pin_led, GPIO.LOW)
+            time.sleep(0.05)
+            print(f"  signal pulse {i+1}/{repeats}")
+    finally:
+        pwm.stop()
+        GPIO.output(pin_led, GPIO.LOW)
+
 def try_find_shifted_freq(sdr, detected_freq, median_noise, dynamic_threshold, start_freq, end_freq, max_offsets=5):
     print(f"🔎 try_find_shifted_freq around {detected_freq//1_000_000} MHz")
     candidates = []
@@ -190,6 +209,7 @@ def should_ignore(freq):
             del ignore_counter[f]
     if freq in ignore_counter and ignore_counter[freq]["count"] >= ignore_limit:
         print(f"⚠️ Частота {freq//1_000_000} MHz временно игнорируется (count={ignore_counter[freq]['count']}).")
+        signal_ignore()
         return True
     return False
 
@@ -231,18 +251,18 @@ def scan_frequency_range(sdr, start_freq, end_freq, threshold):
                     print(f"📊 Повторное превышение порога: {signal_above_threshold} раз")
                     if signal_above_threshold >= threshold:
                         print(f"🚨 Обнаружено активное излучение на частоте {freq//1_000_000} MHz!")
-                        if 2_300_000_000 <= freq <= 2_500_000_000 or 5_700_000_000 <= freq <= 5_900_000_000:
+                        if 2_300_000_000 <= freq <= 2_500_000_000:
                             print("  Частота в 2.4 или 5.8 диапазоне -> обычный сигнал")
-                            signal_it(fast=False)
+                            signal_it(fast=True)
                         else:
                             print("  Частота не 2.4/5.8 -> быстрый сигнал и пометка/игнорирование при повторе")
-                            signal_it(fast=True)
+                            signal_it(fast=False)
                             mark_ignore(freq)
                         tracked_freq = freq
                         repeat_count = 0
                         track_attempts = 0
                         while True:
-                            if track_attempts >= 6 and not (2_300_000_000 <= freq <= 2_500_000_000 or 5_700_000_000 <= freq <= 5_900_000_000):
+                            if track_attempts >= 6 and not (2_300_000_000 <= freq <= 2_500_000_000):
                                 print("⏹ Превышен лимит попыток трекинга вне диапазона 2.4/5.8 — выходим из трекинга.")
                                 break
                             checks = 3
@@ -263,7 +283,7 @@ def scan_frequency_range(sdr, start_freq, end_freq, threshold):
                                 track_attempts += 1
                                 print(f"📡 Сигнал всё ещё активен ({repeat_count} повторов)...")
                                 signal_it(fast=False)
-                                if repeat_count >= 3 and not (2_300_000_000 <= freq <= 2_500_000_000 or 5_700_000_000 <= freq <= 5_900_000_000):
+                                if repeat_count >= 3 and not (2_300_000_000 <= freq <= 2_500_000_000):
                                     print(f"🧾 Частота {tracked_freq//1_000_000} MHz уходит в игнор на {ignore_duration} сек (после {repeat_count} повторов).")
                                     mark_ignore(tracked_freq)
                                     break
