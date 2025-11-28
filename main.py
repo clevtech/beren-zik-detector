@@ -20,11 +20,11 @@ SAMPLES_PER_READ = 8192
 SERIAL_NUMBER = None
 
 BASE_THRESHOLD = 2
-MAX_THRESHOLD = 10
+MAX_THRESHOLD = 6
 ADAPTIVE = True
-THRESHOLD_DELTA = 3
+THRESHOLD_DELTA = 2
 
-STEP = 10_000_000
+STEP = 5_000_000
 LISTEN_DURATION = 2
 
 FREQUENCY_RANGES = [
@@ -103,19 +103,21 @@ def measure_signal_power(sdr, center_freq):
         print(f"Ошибка measure_signal_power на {center_freq//1_000_000} MHz: {e}")
         return None
 
-def live_listen(sdr, frequency, median_noise, duration=2, samples=10):
+def live_listen(sdr, frequency, median_noise, duration=2, samples=10, delta=None):
+    if delta is None:
+        delta = THRESHOLD_DELTA
     print(f"\n▶️ Продолжаем прослушивание {frequency//1_000_000} MHz в течение ~{duration} секунд...")
     signal_above_threshold = 0
     for i in range(samples):
         power = measure_signal_power(sdr, frequency)
         if power is not None:
             print(f"  {frequency//1_000_000} MHz (sample {i+1}/{samples}): {power:.2f} dBFS")
-            if power - median_noise > THRESHOLD_DELTA:
+            if power - median_noise > delta:
                 signal_above_threshold += 1
         else:
             print(f"  {frequency//1_000_000} MHz: ошибка чтения")
         time.sleep(duration / samples)
-    print(f"  [LISTEN RESULT] {frequency//1_000_000} MHz -> {signal_above_threshold}/{samples} раз выше Δ{THRESHOLD_DELTA}")
+    print(f"  [LISTEN RESULT] {frequency//1_000_000} MHz -> {signal_above_threshold}/{samples} раз выше Δ{delta}")
     return signal_above_threshold
 
 def adai(pin=17):
@@ -160,7 +162,7 @@ def signal_it(fast=False):
 def signal_ignore():
     pwm = GPIO.PWM(pin, 2000)
     try:
-        print(f"🔔 signal_ignore called, fast={fast}")
+        print("🔔 signal_ignore called")
         repeats = 6
         for i in range(repeats):
             GPIO.output(pin_led, GPIO.HIGH)
@@ -239,15 +241,17 @@ def scan_frequency_range(sdr, start_freq, end_freq, threshold):
             readings[freq] = strength
             print(f"{freq//1_000_000} MHz: {strength:.2f} dBFS")
             if len(readings) >= 3:
-                median_noise = statistics.median(list(readings.values()))
-                noise_spread = max(readings.values()) - min(readings.values())
+                values = list(readings.values())
+                median_noise = statistics.median(values)
+                noise_spread = max(values) - min(values)
                 dynamic_threshold = BASE_THRESHOLD + min(noise_spread / 2, MAX_THRESHOLD - BASE_THRESHOLD)
+                dynamic_threshold = max(BASE_THRESHOLD, min(dynamic_threshold, MAX_THRESHOLD))
                 dynamic_threshold = round(dynamic_threshold, 2)
 
                 print(f"  Порог шума {median_noise:.2f} dBFS, шумовой разброс {noise_spread:.2f}, динамический порог {dynamic_threshold:.2f}")
                 if strength - median_noise > dynamic_threshold:
                     print(f"⚙️ Δ={strength - median_noise:.2f} > {dynamic_threshold:.2f} (возможно активность)")
-                    signal_above_threshold = live_listen(sdr, freq, median_noise, LISTEN_DURATION)
+                    signal_above_threshold = live_listen(sdr, freq, median_noise, duration=LISTEN_DURATION, delta=dynamic_threshold / 2)
                     print(f"📊 Повторное превышение порога: {signal_above_threshold} раз")
                     if signal_above_threshold >= threshold:
                         print(f"🚨 Обнаружено активное излучение на частоте {freq//1_000_000} MHz!")
